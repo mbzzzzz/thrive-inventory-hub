@@ -22,27 +22,17 @@ export function StoreInfo() {
     totalStores: number
   } | null>(null)
   const [isLoading, setIsLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
 
   const fetchStoreInfo = async () => {
     setIsLoading(true)
-    setError(null)
     try {
       const response = await fetch("/api/stores/info")
       if (response.ok) {
         const data = await response.json()
-        // Ensure stores is always an array
-        setStoreInfo({
-          stores: data.stores || [],
-          activeStores: data.activeStores || 0,
-          totalStores: data.totalStores || 0,
-        })
-      } else {
-        setError("Failed to fetch store information")
+        setStoreInfo(data)
       }
     } catch (error) {
       console.error("Failed to fetch store info:", error)
-      setError("Network error occurred")
     } finally {
       setIsLoading(false)
     }
@@ -51,22 +41,6 @@ export function StoreInfo() {
   useEffect(() => {
     fetchStoreInfo()
   }, [])
-
-  if (error) {
-    return (
-      <Card className="mb-6">
-        <CardContent className="p-6">
-          <div className="text-red-600">
-            <div className="font-medium">Error loading store information</div>
-            <div className="text-sm">{error}</div>
-            <Button onClick={fetchStoreInfo} className="mt-2 bg-transparent" size="sm" variant="outline">
-              Try Again
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-    )
-  }
 
   if (!storeInfo) {
     return (
@@ -97,29 +71,23 @@ export function StoreInfo() {
       </CardHeader>
       <CardContent>
         <div className="space-y-3">
-          {storeInfo.stores && storeInfo.stores.length > 0 ? (
-            storeInfo.stores.map((store) => (
-              <div key={store.key} className="flex items-center justify-between p-3 bg-slate-50 rounded-lg">
-                <div className="flex items-center gap-3">
-                  {store.success ? (
-                    <CheckCircle className="w-5 h-5 text-green-500" />
-                  ) : (
-                    <XCircle className="w-5 h-5 text-red-500" />
-                  )}
-                  <div>
-                    <div className="font-medium">{store.shopName || store.name}</div>
-                    <div className="text-sm text-slate-600">{store.domain}</div>
-                    {store.error && <div className="text-sm text-red-600">{store.error}</div>}
-                  </div>
+          {storeInfo.stores.map((store) => (
+            <div key={store.key} className="flex items-center justify-between p-3 bg-slate-50 rounded-lg">
+              <div className="flex items-center gap-3">
+                {store.success ? (
+                  <CheckCircle className="w-5 h-5 text-green-500" />
+                ) : (
+                  <XCircle className="w-5 h-5 text-red-500" />
+                )}
+                <div>
+                  <div className="font-medium">{store.shopName || store.name}</div>
+                  <div className="text-sm text-slate-600">{store.domain}</div>
+                  {store.error && <div className="text-sm text-red-600">{store.error}</div>}
                 </div>
-                <Badge variant={store.success ? "default" : "destructive"}>
-                  {store.success ? "Connected" : "Error"}
-                </Badge>
               </div>
-            ))
-          ) : (
-            <div className="text-center py-4 text-slate-500">No store configurations found</div>
-          )}
+              <Badge variant={store.success ? "default" : "destructive"}>{store.success ? "Connected" : "Error"}</Badge>
+            </div>
+          ))}
         </div>
 
         {storeInfo.activeStores === 0 && (
