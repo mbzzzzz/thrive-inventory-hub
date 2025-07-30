@@ -6,9 +6,26 @@ export async function GET() {
     const shopifyService = new ShopifyService()
     const storeInfo = await shopifyService.getStoreInfo()
 
-    return NextResponse.json(storeInfo)
+    // Ensure we always return the expected structure
+    const response = {
+      stores: storeInfo?.stores || [],
+      activeStores: storeInfo?.activeStores || 0,
+      totalStores: storeInfo?.totalStores || 0,
+    }
+
+    return NextResponse.json(response)
   } catch (error) {
     console.error("Store info API error:", error)
-    return NextResponse.json({ error: "Failed to fetch store info" }, { status: 500 })
+
+    // Return a safe fallback structure
+    return NextResponse.json(
+      {
+        stores: [],
+        activeStores: 0,
+        totalStores: 0,
+        error: "Failed to fetch store info",
+      },
+      { status: 500 },
+    )
   }
 }
