@@ -1,27 +1,40 @@
 import { NextResponse } from "next/server"
+import { Resend } from "resend"
+import { RESEND_API_KEY } from "@/lib/env"
+
+const resend = new Resend(RESEND_API_KEY)
 
 export async function POST(request: Request) {
   try {
-    const { invoiceData } = await request.json()
+    const { to, subject, htmlContent, textContent } = await request.json()
 
-    // In production, integrate with email service like SendGrid, Resend, etc.
-    console.log("📧 Sending invoice email to:", invoiceData.customer.email)
-    console.log("Invoice details:", {
-      number: invoiceData.invoiceNumber,
-      total: invoiceData.total,
-      customer: invoiceData.customer.name,
+    if (!to || !subject || (!htmlContent && !textContent)) {
+      return NextResponse.json({ success: false, error: "Missing required email fields." }, { status: 400 })
+    }
+
+    if (!RESEND_API_KEY) {
+      return NextResponse.json({ success: false, error: "Resend API key not configured." }, { status: 500 })
+    }
+
+    const { data, error } = await resend.emails.send({
+      from: "Thrive Inventory Hub <onboarding@resend.dev>", // Replace with your verified Resend domain
+      to: [to],
+      subject: subject,
+      html: htmlContent,
+      text: textContent,
     })
 
-    // Simulate email sending
-    await new Promise((resolve) => setTimeout(resolve, 1000))
+    if (error) {
+      console.error("Resend email error:", error)
+      return NextResponse.json({ success: false, error: error.message || "Failed to send email." }, { status: 500 })
+    }
 
-    return NextResponse.json({
-      success: true,
-      message: "Invoice email sent successfully",
-      timestamp: new Date().toISOString(),
-    })
-  } catch (error) {
-    console.error("Send invoice API error:", error)
-    return NextResponse.json({ error: "Failed to send invoice" }, { status: 500 })
+    return NextResponse.json({ success: true, data: data, message: "Invoice email sent successfully!" })
+  } catch (error: any) {
+    console.error("API Error sending invoice email:", error)
+    return NextResponse.json(
+      { success: false, error: error.message || "An unexpected error occurred." },
+      { status: 500 },
+    )
   }
 }

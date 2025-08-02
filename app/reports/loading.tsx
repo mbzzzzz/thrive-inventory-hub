@@ -1,10 +1,10 @@
 import { Loader2 } from "lucide-react"
 
-export default function InventoryLoading() {
+export default function ReportsLoading() {
   return (
     <div className="flex flex-col items-center justify-center min-h-[60vh]">
       <Loader2 className="h-12 w-12 animate-spin text-thrive-500" />
-      <p className="mt-4 text-lg text-muted-foreground">Loading inventory...</p>
+      <p className="mt-4 text-lg text-muted-foreground">Generating reports...</p>
     </div>
   )
 }

@@ -1,0 +1,54 @@
+.magnetLines-container {
+  display: grid;
+  /* These are set dynamically by the component's style prop */
+  /* grid-template-columns: repeat(var(--columns), 1fr); */
+  /* grid-template-rows: repeat(var(--rows), 1fr); */
+  justify-items: center;
+  align-items: center;
+  /* These are set dynamically by the component's style prop */
+  /* width: 80vmin; */
+  /* height: 80vmin; */
+  position: relative; /* Added to contain the absolutely positioned grid */
+}
+
+.magnetLines-container span {
+  display: block;
+  transform-origin: center;
+  will-change: transform;
+  transform: rotate(var(--rotate));
+  /* Transition for smooth rotation */
+  transition: transform 0.1s ease-out;
+}
+
+/* This CSS is for the decorative magnet lines component. */
+.magnet-lines-grid {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-size: 40px 40px;
+  background-image: linear-gradient(to right, #f0f0f0 1px, transparent 1px),
+    linear-gradient(to bottom, #f0f0f0 1px, transparent 1px);
+  opacity: 0.3; /* Adjust opacity as needed */
+  z-index: -1;
+}
+
+.dark .magnet-lines-grid {
+  background-image: linear-gradient(to right, #2a2a2a 1px, transparent 1px),
+    linear-gradient(to bottom, #2a2a2a 1px, transparent 1px);
+}
+
+.magnet-lines {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  /* Position it behind other content */
+  z-index: -1;
+  /* Make it non-interactive */
+  pointer-events: none;
+  /* Adjust opacity as needed */
+  opacity: 0.3;
+}

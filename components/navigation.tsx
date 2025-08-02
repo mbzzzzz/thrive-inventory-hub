@@ -1,54 +1,50 @@
 "use client"
 
 import Link from "next/link"
+import { Home, Package, ShoppingCart, Users, LineChart, Settings, Package2, FileText } from "lucide-react"
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { usePathname } from "next/navigation"
-import { Home, Package, ShoppingCart, FileText, BarChart3 } from "lucide-react"
 
 export function Navigation() {
   const pathname = usePathname()
 
   const navItems = [
-    { href: "/", label: "Dashboard", icon: Home },
-    { href: "/inventory", label: "Inventory", icon: Package },
-    { href: "/orders", label: "Orders", icon: ShoppingCart },
-    { href: "/invoices", label: "Invoices", icon: FileText },
-    { href: "/reports", label: "Reports", icon: BarChart3 },
+    { href: "/", icon: Home, label: "Dashboard" },
+    { href: "/inventory", icon: Package, label: "Inventory" },
+    { href: "/orders", icon: ShoppingCart, label: "Orders" },
+    { href: "/invoices", icon: FileText, label: "Invoices" },
+    { href: "/customers", icon: Users, label: "Customers" },
+    { href: "/reports", icon: LineChart, label: "Reports" },
+    { href: "/settings", icon: Settings, label: "Settings" },
   ]
 
   return (
-    <nav className="bg-white shadow-sm border-b border-slate-200">
-      <div className="max-w-7xl mx-auto px-6">
-        <div className="flex items-center justify-between h-16">
-          <div className="flex items-center space-x-8">
-            <Link href="/" className="flex items-center space-x-2">
-              <Package className="w-8 h-8 text-indigo-600" />
-              <span className="text-xl font-bold text-slate-900">Thrive Pets</span>
-            </Link>
-
-            <div className="flex space-x-4">
-              {navItems.map((item) => {
-                const Icon = item.icon
-                const isActive = pathname === item.href
-
-                return (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    className={`flex items-center space-x-2 px-3 py-2 rounded-md text-sm font-medium transition-colors ${
-                      isActive
-                        ? "bg-indigo-100 text-indigo-700"
-                        : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
-                    }`}
-                  >
-                    <Icon className="w-4 h-4" />
-                    <span>{item.label}</span>
-                  </Link>
-                )
-              })}
-            </div>
-          </div>
-        </div>
-      </div>
-    </nav>
+    <aside className="fixed inset-y-0 left-0 z-10 hidden w-14 flex-col border-r bg-background sm:flex">
+      <nav className="flex flex-col items-center gap-4 px-2 sm:py-5">
+        <Link
+          href="#"
+          className="group flex h-9 w-9 shrink-0 items-center justify-center gap-2 rounded-full bg-thrive-600 text-lg font-semibold text-primary-foreground md:h-8 md:w-8 md:text-base"
+        >
+          <Package2 className="h-4 w-4 transition-all group-hover:scale-110" />
+          <span className="sr-only">Thrive Inventory Hub</span>
+        </Link>
+        <TooltipProvider>
+          {navItems.map((item) => (
+            <Tooltip key={item.href}>
+              <TooltipTrigger asChild>
+                <Link
+                  href={item.href}
+                  className={`flex h-9 w-9 items-center justify-center rounded-lg transition-colors hover:text-foreground md:h-8 md:w-8 ${pathname === item.href ? "bg-accent text-accent-foreground" : "text-muted-foreground"}`}
+                >
+                  <item.icon className="h-5 w-5" />
+                  <span className="sr-only">{item.label}</span>
+                </Link>
+              </TooltipTrigger>
+              <TooltipContent side="right">{item.label}</TooltipContent>
+            </Tooltip>
+          ))}
+        </TooltipProvider>
+      </nav>
+    </aside>
   )
 }

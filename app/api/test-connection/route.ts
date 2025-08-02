@@ -1,48 +1,26 @@
 import { NextResponse } from "next/server"
 import { ShopifyService } from "@/lib/shopify-service"
 
-export async function GET() {
+export async function POST(request: Request) {
   try {
-    const shopifyService = new ShopifyService()
+    const { domain, accessToken } = await request.json()
 
-    // Check environment variables
-    const envCheck = {
-      SHOPIFY_STORE_A_DOMAIN: !!process.env.SHOPIFY_STORE_A_DOMAIN,
-      SHOPIFY_STORE_A_ACCESS_TOKEN: !!process.env.SHOPIFY_STORE_A_ACCESS_TOKEN,
-      SHOPIFY_STORE_B_DOMAIN: !!process.env.SHOPIFY_STORE_B_DOMAIN,
-      SHOPIFY_STORE_B_ACCESS_TOKEN: !!process.env.SHOPIFY_STORE_B_ACCESS_TOKEN,
+    if (!domain || !accessToken) {
+      return NextResponse.json({ success: false, error: "Domain and access token are required." }, { status: 400 })
     }
 
-    console.log("🔍 Environment Variables Check:", envCheck)
+    const shopifyService = new ShopifyService(domain, accessToken)
+    const result = await shopifyService.testConnection()
 
-    // Test both store connections
-    const [primaryTest, outletTest] = await Promise.all([
-      shopifyService.testConnection("primary"),
-      shopifyService.testConnection("outlet"),
-    ])
-
-    return NextResponse.json({
-      success: true,
-      environment: envCheck,
-      stores: {
-        primary: primaryTest,
-        outlet: outletTest,
-      },
-      timestamp: new Date().toISOString(),
-    })
-  } catch (error) {
-    console.error("Connection test failed:", error)
+    if (result.success) {
+      return NextResponse.json({ success: true, shopName: result.shopName })
+    } else {
+      return NextResponse.json({ success: false, error: result.error || "Connection failed." }, { status: 401 })
+    }
+  } catch (error: any) {
+    console.error("API Error testing connection:", error)
     return NextResponse.json(
-      {
-        success: false,
-        error: error instanceof Error ? error.message : "Connection test failed",
-        environment: {
-          SHOPIFY_STORE_A_DOMAIN: !!process.env.SHOPIFY_STORE_A_DOMAIN,
-          SHOPIFY_STORE_A_ACCESS_TOKEN: !!process.env.SHOPIFY_STORE_A_ACCESS_TOKEN,
-          SHOPIFY_STORE_B_DOMAIN: !!process.env.SHOPIFY_STORE_B_DOMAIN,
-          SHOPIFY_STORE_B_ACCESS_TOKEN: !!process.env.SHOPIFY_STORE_B_ACCESS_TOKEN,
-        },
-      },
+      { success: false, error: error.message || "An unexpected error occurred." },
       { status: 500 },
     )
   }

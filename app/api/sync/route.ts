@@ -1,20 +1,30 @@
-import { type NextRequest, NextResponse } from "next/server"
+import { NextResponse } from "next/server"
 import { ShopifyService } from "@/lib/shopify-service"
 
-export async function POST(request: NextRequest) {
+export async function POST(request: Request) {
+  const shopifyDomain = request.headers.get("X-Shopify-Domain")
+  const shopifyAccessToken = request.headers.get("X-Shopify-Access-Token")
+
+  if (!shopifyDomain || !shopifyAccessToken) {
+    return NextResponse.json({ success: false, error: "Shopify credentials not provided in headers." }, { status: 401 })
+  }
+
   try {
     const { sku } = await request.json()
-
     if (!sku) {
-      return NextResponse.json({ error: "SKU is required" }, { status: 400 })
+      return NextResponse.json({ success: false, error: "SKU is required for sync." }, { status: 400 })
     }
 
-    const shopifyService = new ShopifyService()
+    const shopifyService = new ShopifyService(shopifyDomain, shopifyAccessToken)
     const result = await shopifyService.syncSKU(sku)
 
-    return NextResponse.json(result)
-  } catch (error) {
-    console.error("Sync API error:", error)
-    return NextResponse.json({ error: "Sync failed" }, { status: 500 })
+    if (result.success) {
+      return NextResponse.json({ success: true, message: `SKU ${sku} synced successfully.` })
+    } else {
+      return NextResponse.json({ success: false, error: result.error || `Failed to sync SKU ${sku}.` }, { status: 500 })
+    }
+  } catch (error: any) {
+    console.error("Error syncing SKU:", error)
+    return NextResponse.json({ success: false, error: error.message || "Failed to sync SKU." }, { status: 500 })
   }
 }

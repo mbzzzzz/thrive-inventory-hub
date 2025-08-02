@@ -1,21 +1,42 @@
 import { NextResponse } from "next/server"
 import type { NextRequest } from "next/server"
+import {
+  SHOPIFY_STORE_DOMAIN_1,
+  SHOPIFY_ACCESS_TOKEN_1,
+  SHOPIFY_STORE_DOMAIN_2,
+  SHOPIFY_ACCESS_TOKEN_2,
+} from "./lib/env"
 
 export function middleware(request: NextRequest) {
-  // Add security headers
-  const response = NextResponse.next()
+  const activeStoreKey = request.headers.get("X-Shopify-Active-Store-Key")
 
-  response.headers.set("X-Frame-Options", "DENY")
-  response.headers.set("X-Content-Type-Options", "nosniff")
-  response.headers.set("Referrer-Policy", "origin-when-cross-origin")
-  response.headers.set(
-    "Content-Security-Policy",
-    "default-src 'self'; script-src 'self' 'unsafe-eval' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:;",
-  )
+  let shopifyDomain: string | undefined
+  let shopifyAccessToken: string | undefined
 
-  return response
+  if (activeStoreKey === "store1") {
+    shopifyDomain = SHOPIFY_STORE_DOMAIN_1
+    shopifyAccessToken = SHOPIFY_ACCESS_TOKEN_1
+  } else if (activeStoreKey === "store2") {
+    shopifyDomain = SHOPIFY_STORE_DOMAIN_2
+    shopifyAccessToken = SHOPIFY_ACCESS_TOKEN_2
+  }
+
+  const requestHeaders = new Headers(request.headers)
+
+  if (shopifyDomain) {
+    requestHeaders.set("X-Shopify-Domain", shopifyDomain)
+  }
+  if (shopifyAccessToken) {
+    requestHeaders.set("X-Shopify-Access-Token", shopifyAccessToken)
+  }
+
+  return NextResponse.next({
+    request: {
+      headers: requestHeaders,
+    },
+  })
 }
 
 export const config = {
-  matcher: ["/((?!api|_next/static|_next/image|favicon.ico).*)"],
+  matcher: "/api/:path*",
 }

@@ -1,523 +1,409 @@
 "use client"
 
-import { useState, useEffect } from "react"
-import { ArrowLeft, Plus, Trash2, Save, Send, Download } from "lucide-react"
+import { useState, useEffect, useMemo } from "react"
 import { Button } from "@/components/ui/button"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Textarea } from "@/components/ui/textarea"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import Link from "next/link"
-import { useSearchParams } from "next/navigation"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { Textarea } from "@/components/ui/textarea"
+import { Loader2, XCircle, Download, Send, AlertCircle, RefreshCw } from "lucide-react"
+import { useInventory } from "@/contexts/inventory-context"
+import { useToast } from "@/hooks/use-toast"
 
 interface InvoiceItem {
   id: string
+  title: string
   sku: string
-  description: string
-  quantity: number
   price: number
-  total: number
-}
-
-interface Customer {
-  id: string
-  name: string
-  email: string
-  address: string
-  phone?: string
+  quantity: number
 }
 
 export default function CreateInvoicePage() {
-  const searchParams = useSearchParams()
-  const orderId = searchParams.get("orderId")
+  const { products, orders, loadingProducts, loadingOrders, error, fetchProducts, fetchOrders } = useInventory()
+  const { toast } = useToast()
 
-  const [customer, setCustomer] = useState<Customer>({
-    id: "",
-    name: "",
-    email: "",
-    address: "",
-    phone: "",
-  })
-  const [items, setItems] = useState<InvoiceItem[]>([
-    { id: "1", sku: "", description: "", quantity: 1, price: 0, total: 0 },
-  ])
-  const [notes, setNotes] = useState("")
-  const [dueDate, setDueDate] = useState("")
-  const [invoiceNumber, setInvoiceNumber] = useState("")
-  const [availableProducts, setAvailableProducts] = useState<any[]>([])
-  const [isLoading, setIsLoading] = useState(false)
+  const [selectedOrderId, setSelectedOrderId] = useState<string>("")
+  const [invoiceItems, setInvoiceItems] = useState<InvoiceItem[]>([])
+  const [customerName, setCustomerName] = useState("")
+  const [customerEmail, setCustomerEmail] = useState("")
+  const [invoiceNotes, setInvoiceNotes] = useState("")
+  const [isGeneratingPdf, setIsGeneratingPdf] = useState(false)
+  const [isSendingEmail, setIsSendingEmail] = useState(false)
+
+  const getHeaders = () => {
+    return {
+      "Content-Type": "application/json",
+      "X-Shopify-Domain": localStorage.getItem("active_shopify_store_key")
+        ? localStorage.getItem(`${localStorage.getItem("active_shopify_store_key")}_shopify_domain`) || ""
+        : "",
+      "X-Shopify-Access-Token": localStorage.getItem("active_shopify_store_key")
+        ? localStorage.getItem(`${localStorage.getItem("active_shopify_store_key")}_shopify_access_token`) || ""
+        : "",
+      "X-Shopify-Active-Store-Key": localStorage.getItem("active_shopify_store_key") || "",
+    }
+  }
 
   useEffect(() => {
-    // Generate invoice number
-    const now = new Date()
-    const invoiceNum = `INV-${now.getFullYear()}${(now.getMonth() + 1).toString().padStart(2, "0")}${now.getDate().toString().padStart(2, "0")}-${Math.floor(
-      Math.random() * 1000,
-    )
-      .toString()
-      .padStart(3, "0")}`
-    setInvoiceNumber(invoiceNum)
-
-    // Set default due date (30 days from now)
-    const defaultDueDate = new Date()
-    defaultDueDate.setDate(defaultDueDate.getDate() + 30)
-    setDueDate(defaultDueDate.toISOString().split("T")[0])
-
-    // Fetch products and order data
-    fetchData()
-  }, [orderId])
-
-  const fetchData = async () => {
-    try {
-      // Fetch available products
-      const productsResponse = await fetch("/api/products")
-      if (productsResponse.ok) {
-        const products = await productsResponse.json()
-        setAvailableProducts(products)
-      }
-
-      // If orderId is provided, fetch order data
-      if (orderId) {
-        const orderResponse = await fetch(`/api/orders/${orderId}`)
-        if (orderResponse.ok) {
-          const orderData = await orderResponse.json()
-          const order = orderData.order
-
-          // Pre-fill customer information
-          setCustomer({
-            id: orderId,
-            name: order.customer.name,
-            email: order.customer.email,
-            phone: order.customer.phone || "",
-            address: `${order.customer.address.address1}\n${order.customer.address.city}, ${order.customer.address.province} ${order.customer.address.zip}\n${order.customer.address.country}`,
-          })
-
-          // Pre-fill items from order
-          const orderItems = order.items.map((item: any, index: number) => ({
-            id: (index + 1).toString(),
+    if (selectedOrderId) {
+      const order = orders.find((o) => o.id === selectedOrderId)
+      if (order) {
+        setCustomerName(order.customer.name)
+        setCustomerEmail(order.customer.email)
+        setInvoiceItems(
+          order.lineItems.map((item) => ({
+            id: item.id,
+            title: item.title,
             sku: item.sku,
-            description: item.title,
+            price: Number.parseFloat(item.price),
             quantity: item.quantity,
-            price: item.price,
-            total: item.total,
-          }))
-
-          setItems(orderItems)
-          setNotes(`Invoice for Order ${order.orderNumber}`)
-        }
+          })),
+        )
       }
-    } catch (error) {
-      console.error("Error fetching data:", error)
+    } else {
+      setCustomerName("")
+      setCustomerEmail("")
+      setInvoiceItems([])
     }
-  }
+  }, [selectedOrderId, orders])
 
-  const addItem = () => {
-    const newItem: InvoiceItem = {
-      id: Date.now().toString(),
-      sku: "",
-      description: "",
-      quantity: 1,
-      price: 0,
-      total: 0,
-    }
-    setItems([...items, newItem])
-  }
-
-  const removeItem = (id: string) => {
-    setItems(items.filter((item) => item.id !== id))
-  }
-
-  const updateItem = (id: string, field: keyof InvoiceItem, value: any) => {
-    setItems(
-      items.map((item) => {
-        if (item.id === id) {
-          const updatedItem = { ...item, [field]: value }
-
-          // Auto-fill description and price when SKU is selected
-          if (field === "sku") {
-            const product = availableProducts.find((p) => p.sku === value)
-            if (product) {
-              updatedItem.description = product.description
-              updatedItem.price = product.price || 0
-            }
-          }
-
-          // Calculate total
-          updatedItem.total = updatedItem.quantity * updatedItem.price
-          return updatedItem
-        }
-        return item
-      }),
-    )
-  }
-
-  const subtotal = items.reduce((sum, item) => sum + item.total, 0)
-  const tax = subtotal * 0.08 // 8% tax
+  const subtotal = useMemo(
+    () => invoiceItems.reduce((sum, item) => sum + item.price * item.quantity, 0),
+    [invoiceItems],
+  )
+  const taxRate = 0.08 // Example tax rate
+  const tax = subtotal * taxRate
   const total = subtotal + tax
 
-  const handleSave = async () => {
-    setIsLoading(true)
-    try {
-      const invoiceData = {
-        invoiceNumber,
-        customer,
-        items,
-        notes,
-        dueDate,
-        subtotal,
-        tax,
-        total,
-        status: "draft",
-      }
-
-      const response = await fetch("/api/invoices", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(invoiceData),
-      })
-
-      if (response.ok) {
-        alert("Invoice saved successfully!")
-      } else {
-        alert("Failed to save invoice")
-      }
-    } catch (error) {
-      console.error("Error saving invoice:", error)
-      alert("Error saving invoice")
-    } finally {
-      setIsLoading(false)
+  const handleAddItem = (productId: string) => {
+    const product = products.find((p) => p.id === productId)
+    if (product && product.variants.length > 0) {
+      // For simplicity, add the first variant
+      const variant = product.variants[0]
+      setInvoiceItems((prev) => [
+        ...prev,
+        {
+          id: variant.id,
+          title: product.title + (variant.title !== "Default Title" ? ` - ${variant.title}` : ""),
+          sku: variant.sku,
+          price: Number.parseFloat(variant.price),
+          quantity: 1,
+        },
+      ])
     }
   }
 
-  const handleSend = async () => {
-    setIsLoading(true)
-    try {
-      const invoiceData = {
-        invoiceNumber,
-        customer,
-        items,
-        notes,
-        dueDate,
-        subtotal,
-        tax,
-        total,
-        status: "sent",
-      }
-
-      const response = await fetch("/api/invoices", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(invoiceData),
-      })
-
-      if (response.ok) {
-        // Also send email
-        const emailResponse = await fetch("/api/invoices/send", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ invoiceData }),
-        })
-
-        if (emailResponse.ok) {
-          alert("Invoice sent successfully!")
-        } else {
-          alert("Invoice saved but failed to send email")
-        }
-      } else {
-        alert("Failed to send invoice")
-      }
-    } catch (error) {
-      console.error("Error sending invoice:", error)
-      alert("Error sending invoice")
-    } finally {
-      setIsLoading(false)
-    }
+  const handleUpdateQuantity = (id: string, quantity: number) => {
+    setInvoiceItems((prev) =>
+      prev.map((item) => (item.id === id ? { ...item, quantity: Math.max(1, quantity) } : item)),
+    )
   }
 
-  const handleDownloadPDF = async () => {
-    try {
-      const invoiceData = {
-        invoiceNumber,
-        customer,
-        items,
-        notes,
-        dueDate,
-        subtotal,
-        tax,
-        total,
-      }
+  const handleRemoveItem = (id: string) => {
+    setInvoiceItems((prev) => prev.filter((item) => item.id !== id))
+  }
 
+  const handleGeneratePdf = async () => {
+    if (!selectedOrderId) {
+      toast({
+        title: "Missing Order",
+        description: "Please select an order to generate an invoice.",
+        variant: "destructive",
+      })
+      return
+    }
+    setIsGeneratingPdf(true)
+    try {
+      // In a real app, you'd pass all invoice details, not just orderId
+      // For this demo, we're relying on the API to fetch order details by ID
       const response = await fetch("/api/invoices/pdf", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(invoiceData),
+        headers: getHeaders(),
+        body: JSON.stringify({ orderId: selectedOrderId }),
       })
 
-      if (response.ok) {
-        const blob = await response.blob()
-        const url = window.URL.createObjectURL(blob)
-        const a = document.createElement("a")
-        a.href = url
-        a.download = `${invoiceNumber}.pdf`
-        document.body.appendChild(a)
-        a.click()
-        window.URL.revokeObjectURL(url)
-        document.body.removeChild(a)
-      } else {
-        alert("Failed to generate PDF")
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || "Failed to generate PDF")
       }
-    } catch (error) {
-      console.error("Error generating PDF:", error)
-      alert("Error generating PDF")
+
+      const blob = await response.blob()
+      const url = window.URL.createObjectURL(blob)
+      const a = document.createElement("a")
+      a.href = url
+      a.download = `invoice-${orders.find((o) => o.id === selectedOrderId)?.orderNumber || "new"}.pdf`
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      window.URL.revokeObjectURL(url)
+      toast({
+        title: "PDF Generated",
+        description: "Invoice PDF downloaded successfully.",
+        variant: "success",
+      })
+    } catch (err: any) {
+      console.error("Error generating PDF:", err)
+      toast({
+        title: "PDF Generation Failed",
+        description: err.message || "Could not generate invoice PDF.",
+        variant: "destructive",
+      })
+    } finally {
+      setIsGeneratingPdf(false)
     }
+  }
+
+  const handleSendEmail = async () => {
+    if (!customerEmail || !customerName || invoiceItems.length === 0) {
+      toast({
+        title: "Missing Information",
+        description: "Please fill in customer details and add items to the invoice.",
+        variant: "destructive",
+      })
+      return
+    }
+    setIsSendingEmail(true)
+    try {
+      const subject = `Your Invoice from Thrive Inventory Hub`
+      const htmlContent = `
+        <h1>Invoice for ${customerName}</h1>
+        <p>Thank you for your business! Here are the details for your invoice:</p>
+        <ul>
+          ${invoiceItems
+            .map(
+              (item) =>
+                `<li>${item.title} (SKU: ${item.sku}) - ${item.quantity} x $${item.price.toFixed(2)} = $${(item.quantity * item.price).toFixed(2)}</li>`,
+            )
+            .join("")}
+        </ul>
+        <p><strong>Subtotal:</strong> $${subtotal.toFixed(2)}</p>
+        <p><strong>Tax:</strong> $${tax.toFixed(2)}</p>
+        <p><strong>Total:</strong> $${total.toFixed(2)}</p>
+        ${invoiceNotes ? `<p><strong>Notes:</strong> ${invoiceNotes}</p>` : ""}
+        <p>Best regards,<br/>Thrive Inventory Hub</p>
+      `
+      const textContent = `Invoice for ${customerName}\n\nThank you for your business! Here are the details for your invoice:\n${invoiceItems.map((item) => `${item.title} (SKU: ${item.sku}) - ${item.quantity} x $${item.price.toFixed(2)} = $${(item.quantity * item.price).toFixed(2)}`).join("\n")}\n\nSubtotal: $${subtotal.toFixed(2)}\nTax: $${tax.toFixed(2)}\nTotal: $${total.toFixed(2)}\n${invoiceNotes ? `Notes: ${invoiceNotes}\n` : ""}\nBest regards,\nThrive Inventory Hub`
+
+      const response = await fetch("/api/invoices/send", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          to: customerEmail,
+          subject,
+          htmlContent,
+          textContent,
+        }),
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || "Failed to send email")
+      }
+
+      toast({
+        title: "Email Sent",
+        description: `Invoice sent to ${customerEmail}.`,
+        variant: "success",
+      })
+    } catch (err: any) {
+      console.error("Error sending email:", err)
+      toast({
+        title: "Email Failed",
+        description: err.message || "Could not send invoice email. Check Resend API key.",
+        variant: "destructive",
+      })
+    } finally {
+      setIsSendingEmail(false)
+    }
+  }
+
+  if (loadingProducts || loadingOrders) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[60vh]">
+        <Loader2 className="h-12 w-12 animate-spin text-thrive-500" />
+        <p className="mt-4 text-lg text-muted-foreground">Loading data for invoice creation...</p>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[60vh] text-destructive">
+        <AlertCircle className="h-12 w-12 mb-4" />
+        <p className="text-lg">Error: {error}</p>
+        <p className="text-sm text-muted-foreground mt-2">Please connect a Shopify store in settings.</p>
+        <Button
+          onClick={() => {
+            fetchProducts()
+            fetchOrders()
+          }}
+          className="mt-4"
+        >
+          <RefreshCw className="h-4 w-4 mr-2" /> Try Again
+        </Button>
+      </div>
+    )
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 p-6">
-      <div className="max-w-4xl mx-auto">
-        {/* Header */}
-        <div className="flex items-center justify-between mb-8">
-          <div className="flex items-center gap-4">
-            <Link href="/invoices">
-              <Button variant="ghost" size="sm">
-                <ArrowLeft className="w-4 h-4 mr-2" />
-                Back to Invoices
-              </Button>
-            </Link>
-            <div>
-              <h1 className="text-3xl font-bold text-slate-900">Create Invoice</h1>
-              <p className="text-slate-600">
-                {orderId ? `Generate invoice for Order ${orderId}` : "Generate a new invoice for your customer"}
-              </p>
+    <div className="grid flex-1 items-start gap-4 p-4 sm:px-6 sm:py-0 md:gap-8">
+      <div className="flex items-center">
+        <h1 className="text-lg font-semibold md:text-2xl">Create Invoice</h1>
+      </div>
+      <div className="grid gap-6 lg:grid-cols-3">
+        <Card className="lg:col-span-2">
+          <CardHeader>
+            <CardTitle>Invoice Details</CardTitle>
+            <CardDescription>Fill in the details for your new invoice.</CardDescription>
+          </CardHeader>
+          <CardContent className="grid gap-6">
+            <div className="grid gap-2">
+              <Label htmlFor="order-select">Select Existing Order (Optional)</Label>
+              <Select value={selectedOrderId} onValueChange={setSelectedOrderId}>
+                <SelectTrigger id="order-select">
+                  <SelectValue placeholder="Select an order" />
+                </SelectTrigger>
+                <SelectContent>
+                  {orders.map((order) => (
+                    <SelectItem key={order.id} value={order.id}>
+                      {order.orderNumber} - {order.customer.name} ({new Date(order.date).toLocaleDateString()})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
-          </div>
-          <div className="flex gap-2">
-            <Button variant="outline" onClick={handleDownloadPDF}>
-              <Download className="w-4 h-4 mr-2" />
-              Download PDF
-            </Button>
-            <Button variant="outline" onClick={handleSave} disabled={isLoading}>
-              <Save className="w-4 h-4 mr-2" />
-              Save Draft
-            </Button>
-            <Button onClick={handleSend} disabled={isLoading} className="bg-indigo-600 hover:bg-indigo-700">
-              <Send className="w-4 h-4 mr-2" />
-              Send Invoice
-            </Button>
-          </div>
-        </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          {/* Main Form */}
-          <div className="lg:col-span-2 space-y-6">
-            {/* Invoice Details */}
-            <Card>
-              <CardHeader>
-                <CardTitle>Invoice Details</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <Label htmlFor="invoice-number">Invoice Number</Label>
-                    <Input
-                      id="invoice-number"
-                      value={invoiceNumber}
-                      onChange={(e) => setInvoiceNumber(e.target.value)}
-                      placeholder="INV-001"
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="due-date">Due Date</Label>
-                    <Input id="due-date" type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="grid gap-2">
+                <Label htmlFor="customer-name">Customer Name</Label>
+                <Input
+                  id="customer-name"
+                  value={customerName}
+                  onChange={(e) => setCustomerName(e.target.value)}
+                  placeholder="John Doe"
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="customer-email">Customer Email</Label>
+                <Input
+                  id="customer-email"
+                  type="email"
+                  value={customerEmail}
+                  onChange={(e) => setCustomerEmail(e.target.value)}
+                  placeholder="john.doe@example.com"
+                />
+              </div>
+            </div>
 
-            {/* Customer Information */}
-            <Card>
-              <CardHeader>
-                <CardTitle>Customer Information</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <Label htmlFor="customer-name">Customer Name</Label>
-                    <Input
-                      id="customer-name"
-                      placeholder="Enter customer name"
-                      value={customer.name}
-                      onChange={(e) => setCustomer((prev) => ({ ...prev, name: e.target.value }))}
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="customer-email">Email</Label>
-                    <Input
-                      id="customer-email"
-                      type="email"
-                      placeholder="customer@example.com"
-                      value={customer.email}
-                      onChange={(e) => setCustomer((prev) => ({ ...prev, email: e.target.value }))}
-                    />
-                  </div>
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <Label htmlFor="customer-phone">Phone</Label>
-                    <Input
-                      id="customer-phone"
-                      placeholder="Phone number"
-                      value={customer.phone}
-                      onChange={(e) => setCustomer((prev) => ({ ...prev, phone: e.target.value }))}
-                    />
-                  </div>
-                </div>
-                <div>
-                  <Label htmlFor="customer-address">Address</Label>
-                  <Textarea
-                    id="customer-address"
-                    placeholder="Enter customer address"
-                    value={customer.address}
-                    onChange={(e) => setCustomer((prev) => ({ ...prev, address: e.target.value }))}
-                  />
-                </div>
-              </CardContent>
-            </Card>
+            <div className="grid gap-2">
+              <Label htmlFor="invoice-notes">Invoice Notes</Label>
+              <Textarea
+                id="invoice-notes"
+                value={invoiceNotes}
+                onChange={(e) => setInvoiceNotes(e.target.value)}
+                placeholder="Add any specific notes for the customer here..."
+                rows={3}
+              />
+            </div>
 
-            {/* Invoice Items */}
-            <Card>
-              <CardHeader>
-                <div className="flex items-center justify-between">
-                  <CardTitle>Invoice Items</CardTitle>
-                  <Button onClick={addItem} size="sm">
-                    <Plus className="w-4 h-4 mr-2" />
-                    Add Item
-                  </Button>
-                </div>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  {items.map((item, index) => (
-                    <div
-                      key={item.id}
-                      className="grid grid-cols-12 gap-4 items-end p-4 border border-slate-200 rounded-lg"
-                    >
-                      <div className="col-span-3">
-                        <Label>SKU</Label>
-                        <Select value={item.sku} onValueChange={(value) => updateItem(item.id, "sku", value)}>
-                          <SelectTrigger>
-                            <SelectValue placeholder="Select SKU" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {availableProducts.map((product) => (
-                              <SelectItem key={product.sku} value={product.sku}>
-                                {product.sku}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="col-span-4">
-                        <Label>Description</Label>
-                        <Input
-                          value={item.description}
-                          onChange={(e) => updateItem(item.id, "description", e.target.value)}
-                          placeholder="Item description"
-                        />
-                      </div>
-                      <div className="col-span-2">
-                        <Label>Quantity</Label>
+            <div className="grid gap-2">
+              <Label>Invoice Items</Label>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Item</TableHead>
+                    <TableHead>SKU</TableHead>
+                    <TableHead className="text-right">Price</TableHead>
+                    <TableHead className="text-right">Quantity</TableHead>
+                    <TableHead className="text-right">Total</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {invoiceItems.length === 0 && (
+                    <TableRow>
+                      <TableCell colSpan={6} className="text-center text-muted-foreground">
+                        No items added.
+                      </TableCell>
+                    </TableRow>
+                  )}
+                  {invoiceItems.map((item) => (
+                    <TableRow key={item.id}>
+                      <TableCell className="font-medium">{item.title}</TableCell>
+                      <TableCell>{item.sku}</TableCell>
+                      <TableCell className="text-right">${item.price.toFixed(2)}</TableCell>
+                      <TableCell className="text-right">
                         <Input
                           type="number"
-                          min="1"
                           value={item.quantity}
-                          onChange={(e) => updateItem(item.id, "quantity", Number.parseInt(e.target.value) || 1)}
+                          onChange={(e) => handleUpdateQuantity(item.id, Number.parseInt(e.target.value))}
+                          className="w-20 text-right"
+                          min="1"
                         />
-                      </div>
-                      <div className="col-span-2">
-                        <Label>Price</Label>
-                        <Input
-                          type="number"
-                          step="0.01"
-                          value={item.price}
-                          onChange={(e) => updateItem(item.id, "price", Number.parseFloat(e.target.value) || 0)}
-                        />
-                      </div>
-                      <div className="col-span-1">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => removeItem(item.id)}
-                          className="text-red-600 hover:text-red-700"
-                          disabled={items.length === 1}
-                        >
-                          <Trash2 className="w-4 h-4" />
+                      </TableCell>
+                      <TableCell className="text-right">${(item.price * item.quantity).toFixed(2)}</TableCell>
+                      <TableCell className="text-right">
+                        <Button variant="destructive" size="sm" onClick={() => handleRemoveItem(item.id)}>
+                          <XCircle className="h-4 w-4" />
+                          <span className="sr-only">Remove</span>
                         </Button>
-                      </div>
-                    </div>
+                      </TableCell>
+                    </TableRow>
                   ))}
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Additional Information */}
-            <Card>
-              <CardHeader>
-                <CardTitle>Additional Information</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div>
-                  <Label htmlFor="notes">Notes</Label>
-                  <Textarea
-                    id="notes"
-                    placeholder="Additional notes or terms..."
-                    value={notes}
-                    onChange={(e) => setNotes(e.target.value)}
-                  />
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-
-          {/* Invoice Summary */}
-          <div className="lg:col-span-1">
-            <Card className="sticky top-6">
-              <CardHeader>
-                <CardTitle>Invoice Summary</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="space-y-2">
-                  {items.map((item, index) => (
-                    <div key={item.id} className="flex justify-between text-sm">
-                      <span className="truncate mr-2">{item.description || `Item ${index + 1}`}</span>
-                      <span>${item.total.toFixed(2)}</span>
-                    </div>
+                </TableBody>
+              </Table>
+              <Select onValueChange={handleAddItem}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Add Product" />
+                </SelectTrigger>
+                <SelectContent>
+                  {products.map((product) => (
+                    <SelectItem key={product.id} value={product.id}>
+                      {product.title}
+                    </SelectItem>
                   ))}
-                </div>
+                </SelectContent>
+              </Select>
+            </div>
+          </CardContent>
+        </Card>
 
-                <div className="border-t pt-4 space-y-2">
-                  <div className="flex justify-between">
-                    <span>Subtotal:</span>
-                    <span>${subtotal.toFixed(2)}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>Tax (8%):</span>
-                    <span>${tax.toFixed(2)}</span>
-                  </div>
-                  <div className="flex justify-between font-bold text-lg border-t pt-2">
-                    <span>Total:</span>
-                    <span>${total.toFixed(2)}</span>
-                  </div>
-                </div>
-
-                <div className="pt-4 text-xs text-slate-500">
-                  <p>Invoice Number: {invoiceNumber}</p>
-                  <p>Due Date: {new Date(dueDate).toLocaleDateString()}</p>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-        </div>
+        <Card className="lg:col-span-1">
+          <CardHeader>
+            <CardTitle>Summary & Actions</CardTitle>
+          </CardHeader>
+          <CardContent className="grid gap-4">
+            <div className="grid gap-2">
+              <div className="flex justify-between">
+                <span>Subtotal:</span>
+                <span>${subtotal.toFixed(2)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Tax ({taxRate * 100}%):</span>
+                <span>${tax.toFixed(2)}</span>
+              </div>
+              <div className="flex justify-between font-bold text-lg">
+                <span>Total:</span>
+                <span>${total.toFixed(2)}</span>
+              </div>
+            </div>
+            <Button onClick={handleGeneratePdf} disabled={isGeneratingPdf || invoiceItems.length === 0}>
+              {isGeneratingPdf ? (
+                <Loader2 className="h-4 w-4 animate-spin mr-2" />
+              ) : (
+                <Download className="h-4 w-4 mr-2" />
+              )}
+              Generate PDF
+            </Button>
+            <Button onClick={handleSendEmail} disabled={isSendingEmail || invoiceItems.length === 0}>
+              {isSendingEmail ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Send className="h-4 w-4 mr-2" />}
+              Send via Email
+            </Button>
+          </CardContent>
+        </Card>
       </div>
     </div>
   )

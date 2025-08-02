@@ -1,235 +1,248 @@
 "use client"
 
-import { useState, useEffect } from "react"
-import { Plus, Search, Download, Eye, Edit, Trash2 } from "lucide-react"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Badge } from "@/components/ui/badge"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { useState } from "react"
 import Link from "next/link"
-
-interface Invoice {
-  id: string
-  number: string
-  customer: string
-  date: string
-  dueDate: string
-  amount: number
-  status: "draft" | "sent" | "paid" | "overdue"
-  items: number
-}
+import { Button } from "@/components/ui/button"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { Badge } from "@/components/ui/badge"
+import { Loader2, PlusCircle, Download, Send, AlertCircle, RefreshCw } from "lucide-react"
+import { useInventory } from "@/contexts/inventory-context"
+import { useToast } from "@/hooks/use-toast"
 
 export default function InvoicesPage() {
-  const [invoices, setInvoices] = useState<Invoice[]>([])
-  const [searchTerm, setSearchTerm] = useState("")
-  const [statusFilter, setStatusFilter] = useState<string>("all")
+  const { orders, loadingOrders, error, fetchOrders } = useInventory()
+  const { toast } = useToast()
+  const [isDownloading, setIsDownloading] = useState<string | null>(null)
+  const [isSending, setIsSending] = useState<string | null>(null)
 
-  useEffect(() => {
-    // Mock data - replace with actual API call
-    const mockInvoices: Invoice[] = [
-      {
-        id: "1",
-        number: "INV-001",
-        customer: "Pet Paradise Store",
-        date: "2024-01-15",
-        dueDate: "2024-02-15",
-        amount: 2450.0,
-        status: "paid",
-        items: 15,
-      },
-      {
-        id: "2",
-        number: "INV-002",
-        customer: "Furry Friends Outlet",
-        date: "2024-01-20",
-        dueDate: "2024-02-20",
-        amount: 1875.5,
-        status: "sent",
-        items: 12,
-      },
-      {
-        id: "3",
-        number: "INV-003",
-        customer: "Paws & Claws Retail",
-        date: "2024-01-25",
-        dueDate: "2024-02-25",
-        amount: 3200.75,
-        status: "overdue",
-        items: 20,
-      },
-    ]
-    setInvoices(mockInvoices)
-  }, [])
-
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case "paid":
-        return "bg-green-100 text-green-800"
-      case "sent":
-        return "bg-blue-100 text-blue-800"
-      case "overdue":
-        return "bg-red-100 text-red-800"
-      case "draft":
-        return "bg-gray-100 text-gray-800"
-      default:
-        return "bg-gray-100 text-gray-800"
+  const getHeaders = () => {
+    // These headers are passed from the client to the API route,
+    // which then uses middleware to inject the actual Shopify credentials.
+    // This is a simplified approach for the demo.
+    return {
+      "Content-Type": "application/json",
+      "X-Shopify-Domain": localStorage.getItem("active_shopify_store_key")
+        ? localStorage.getItem(`${localStorage.getItem("active_shopify_store_key")}_shopify_domain`) || ""
+        : "",
+      "X-Shopify-Access-Token": localStorage.getItem("active_shopify_store_key")
+        ? localStorage.getItem(`${localStorage.getItem("active_shopify_store_key")}_shopify_access_token`) || ""
+        : "",
+      "X-Shopify-Active-Store-Key": localStorage.getItem("active_shopify_store_key") || "",
     }
   }
 
-  const filteredInvoices = invoices.filter((invoice) => {
-    const matchesSearch =
-      invoice.customer.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      invoice.number.toLowerCase().includes(searchTerm.toLowerCase())
-    const matchesStatus = statusFilter === "all" || invoice.status === statusFilter
-    return matchesSearch && matchesStatus
-  })
+  const handleDownloadPdf = async (orderId: string, orderName: string) => {
+    setIsDownloading(orderId)
+    try {
+      const response = await fetch("/api/invoices/pdf", {
+        method: "POST",
+        headers: getHeaders(),
+        body: JSON.stringify({ orderId }),
+      })
 
-  const totalAmount = filteredInvoices.reduce((sum, invoice) => sum + invoice.amount, 0)
-  const paidAmount = filteredInvoices
-    .filter((inv) => inv.status === "paid")
-    .reduce((sum, invoice) => sum + invoice.amount, 0)
-  const pendingAmount = totalAmount - paidAmount
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || "Failed to generate PDF")
+      }
+
+      const blob = await response.blob()
+      const url = window.URL.createObjectURL(blob)
+      const a = document.createElement("a")
+      a.href = url
+      a.download = `invoice-${orderName}.pdf`
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      window.URL.revokeObjectURL(url)
+      toast({
+        title: "PDF Downloaded",
+        description: `Invoice for ${orderName} downloaded successfully.`,
+        variant: "success",
+      })
+    } catch (err: any) {
+      console.error("Error downloading PDF:", err)
+      toast({
+        title: "Download Failed",
+        description: err.message || "Could not download invoice PDF.",
+        variant: "destructive",
+      })
+    } finally {
+      setIsDownloading(null)
+    }
+  }
+
+  const handleSendEmail = async (order: (typeof orders)[0]) => {
+    setIsSending(order.id)
+    try {
+      // In a real app, you'd generate the PDF first, then attach it or link to it.
+      // For this demo, we'll send a simple email with order details.
+      const subject = `Your Invoice for Order ${order.orderNumber} from Thrive Inventory Hub`
+      const htmlContent = `
+        <h1>Invoice for Order ${order.orderNumber}</h1>
+        <p>Dear ${order.customer.name},</p>
+        <p>Thank you for your purchase! Here are the details for your order:</p>
+        <p><strong>Order Total:</strong> $${order.total.toFixed(2)}</p>
+        <p><strong>Payment Status:</strong> ${order.paymentStatus}</p>
+        <p><strong>Fulfillment Status:</strong> ${order.status}</p>
+        <p>You can download the full PDF invoice from our portal (link not active in demo).</p>
+        <p>Best regards,<br/>Thrive Inventory Hub</p>
+      `
+      const textContent = `Invoice for Order ${order.orderNumber}\n\nDear ${order.customer.name},\n\nThank you for your purchase! Here are the details for your order:\nOrder Total: $${order.total.toFixed(2)}\nPayment Status: ${order.paymentStatus}\nFulfillment Status: ${order.status}\n\nBest regards,\nThrive Inventory Hub`
+
+      const response = await fetch("/api/invoices/send", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          to: order.customer.email,
+          subject,
+          htmlContent,
+          textContent,
+        }),
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || "Failed to send email")
+      }
+
+      toast({
+        title: "Email Sent",
+        description: `Invoice for ${order.orderNumber} sent to ${order.customer.email}.`,
+        variant: "success",
+      })
+    } catch (err: any) {
+      console.error("Error sending email:", err)
+      toast({
+        title: "Email Failed",
+        description: err.message || "Could not send invoice email. Check Resend API key.",
+        variant: "destructive",
+      })
+    } finally {
+      setIsSending(null)
+    }
+  }
+
+  if (loadingOrders) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[60vh]">
+        <Loader2 className="h-12 w-12 animate-spin text-thrive-500" />
+        <p className="mt-4 text-lg text-muted-foreground">Loading invoices...</p>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[60vh] text-destructive">
+        <AlertCircle className="h-12 w-12 mb-4" />
+        <p className="text-lg">Error: {error}</p>
+        <p className="text-sm text-muted-foreground mt-2">Please connect a Shopify store in settings.</p>
+        <Button onClick={fetchOrders} className="mt-4">
+          <RefreshCw className="h-4 w-4 mr-2" /> Try Again
+        </Button>
+      </div>
+    )
+  }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 p-6">
-      <div className="max-w-7xl mx-auto">
-        {/* Header */}
-        <div className="flex items-center justify-between mb-8">
-          <div>
-            <h1 className="text-4xl font-bold text-slate-900 mb-2">Invoices</h1>
-            <p className="text-slate-600">Manage your invoices and billing</p>
-          </div>
-          <Link href="/invoices/create">
-            <Button className="bg-indigo-600 hover:bg-indigo-700">
-              <Plus className="w-4 h-4 mr-2" />
-              Create Invoice
+    <div className="grid flex-1 items-start gap-4 p-4 sm:px-6 sm:py-0 md:gap-8">
+      <div className="flex items-center">
+        <h1 className="text-lg font-semibold md:text-2xl">Invoices</h1>
+        <div className="ml-auto flex items-center gap-2">
+          <Link href="/invoices/create" passHref>
+            <Button size="sm" className="h-8 gap-1">
+              <PlusCircle className="h-3.5 w-3.5" />
+              <span className="sr-only sm:not-sr-only sm:whitespace-nowrap">Create Invoice</span>
             </Button>
           </Link>
-        </div>
-
-        {/* Summary Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-slate-600">Total Amount</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-slate-900">
-                ${totalAmount.toLocaleString("en-US", { minimumFractionDigits: 2 })}
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-slate-600">Paid Amount</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-green-600">
-                ${paidAmount.toLocaleString("en-US", { minimumFractionDigits: 2 })}
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-slate-600">Pending Amount</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-orange-600">
-                ${pendingAmount.toLocaleString("en-US", { minimumFractionDigits: 2 })}
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Filters */}
-        <div className="bg-white rounded-xl shadow-sm border border-slate-200 mb-6">
-          <div className="p-6">
-            <div className="flex flex-col md:flex-row gap-4">
-              <div className="flex-1">
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400 w-4 h-4" />
-                  <Input
-                    placeholder="Search invoices..."
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    className="pl-10"
-                  />
-                </div>
-              </div>
-              <div className="flex gap-2">
-                <select
-                  value={statusFilter}
-                  onChange={(e) => setStatusFilter(e.target.value)}
-                  className="px-3 py-2 border border-slate-300 rounded-md text-sm"
-                >
-                  <option value="all">All Status</option>
-                  <option value="draft">Draft</option>
-                  <option value="sent">Sent</option>
-                  <option value="paid">Paid</option>
-                  <option value="overdue">Overdue</option>
-                </select>
-                <Button variant="outline" size="sm">
-                  <Download className="w-4 h-4 mr-2" />
-                  Export
-                </Button>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Invoices Table */}
-        <div className="bg-white rounded-xl shadow-sm border border-slate-200">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Invoice #</TableHead>
-                <TableHead>Customer</TableHead>
-                <TableHead>Date</TableHead>
-                <TableHead>Due Date</TableHead>
-                <TableHead>Items</TableHead>
-                <TableHead>Amount</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filteredInvoices.map((invoice) => (
-                <TableRow key={invoice.id}>
-                  <TableCell className="font-medium">{invoice.number}</TableCell>
-                  <TableCell>{invoice.customer}</TableCell>
-                  <TableCell>{new Date(invoice.date).toLocaleDateString()}</TableCell>
-                  <TableCell>{new Date(invoice.dueDate).toLocaleDateString()}</TableCell>
-                  <TableCell>{invoice.items}</TableCell>
-                  <TableCell className="font-medium">
-                    ${invoice.amount.toLocaleString("en-US", { minimumFractionDigits: 2 })}
-                  </TableCell>
-                  <TableCell>
-                    <Badge className={getStatusColor(invoice.status)}>
-                      {invoice.status.charAt(0).toUpperCase() + invoice.status.slice(1)}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <div className="flex justify-end gap-2">
-                      <Button variant="ghost" size="sm">
-                        <Eye className="w-4 h-4" />
-                      </Button>
-                      <Button variant="ghost" size="sm">
-                        <Edit className="w-4 h-4" />
-                      </Button>
-                      <Button variant="ghost" size="sm" className="text-red-600 hover:text-red-700">
-                        <Trash2 className="w-4 h-4" />
-                      </Button>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+          <Button size="sm" variant="outline" onClick={fetchOrders} disabled={loadingOrders}>
+            <RefreshCw className="h-3.5 w-3.5 mr-1" />
+            Refresh
+          </Button>
         </div>
       </div>
+      <Card>
+        <CardHeader>
+          <CardTitle>Invoice List</CardTitle>
+          <CardDescription>View and manage your generated invoices.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {orders.length === 0 ? (
+            <div className="text-center text-muted-foreground p-8">No invoices found.</div>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Invoice #</TableHead>
+                  <TableHead>Order #</TableHead>
+                  <TableHead>Customer</TableHead>
+                  <TableHead>Date</TableHead>
+                  <TableHead className="text-right">Total</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {orders.map((order) => (
+                  <TableRow key={order.id}>
+                    <TableCell className="font-medium">{order.orderNumber}</TableCell>
+                    <TableCell>{order.orderNumber}</TableCell>
+                    <TableCell>{order.customer.name}</TableCell>
+                    <TableCell>{new Date(order.date).toLocaleDateString()}</TableCell>
+                    <TableCell className="text-right">${order.total.toFixed(2)}</TableCell>
+                    <TableCell>
+                      <Badge
+                        variant={
+                          order.paymentStatus === "paid"
+                            ? "success"
+                            : order.paymentStatus === "pending"
+                              ? "warning"
+                              : "destructive"
+                        }
+                      >
+                        {order.paymentStatus}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <div className="flex justify-end gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleDownloadPdf(order.id, order.orderNumber)}
+                          disabled={isDownloading === order.id}
+                        >
+                          {isDownloading === order.id ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <Download className="h-4 w-4" />
+                          )}
+                          <span className="sr-only sm:not-sr-only ml-1">PDF</span>
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleSendEmail(order)}
+                          disabled={isSending === order.id}
+                        >
+                          {isSending === order.id ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <Send className="h-4 w-4" />
+                          )}
+                          <span className="sr-only sm:not-sr-only ml-1">Email</span>
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
     </div>
   )
 }

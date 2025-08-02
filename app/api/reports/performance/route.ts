@@ -11,10 +11,13 @@ export async function GET(request: Request) {
 
   try {
     const shopifyService = new ShopifyService(shopifyDomain, shopifyAccessToken)
-    const products = await shopifyService.getAllInventory() // Reusing getAllInventory for products
-    return NextResponse.json({ success: true, data: products })
+    const metrics = await shopifyService.getPerformanceMetrics()
+    return NextResponse.json({ success: true, data: metrics })
   } catch (error: any) {
-    console.error("Error fetching products:", error)
-    return NextResponse.json({ success: false, error: error.message || "Failed to fetch products" }, { status: 500 })
+    console.error("Error fetching performance metrics:", error)
+    return NextResponse.json(
+      { success: false, error: error.message || "Failed to fetch performance metrics" },
+      { status: 500 },
+    )
   }
 }
